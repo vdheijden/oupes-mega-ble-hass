@@ -387,40 +387,20 @@ All `debug_info/` paths are relative to the repo root (`oupes-mega-ble-hass/`).
 
 ### WiFi provisioning
 
-The OUPES Mega 1 has an on-board ESP32 WiFi module. The Cleanergy app
-provisions WiFi credentials over BLE during the AUTH (0x01) handshake —
-the SSID and password are encoded into the first three AUTH packets alongside
-the device key.
+The OUPES Mega 1 has an on-board ESP32 WiFi module. WiFi credentials are
+provisioned over BLE with the verified config-net CMD1 protocol, not the older
+AUTH (0x01) handshake. The Home Assistant integration sends a bind command,
+then the credentials, and waits for the device's CMD12 join status.
 
-`pair_device.py` supports WiFi provisioning via `--ssid` and `--psk`:
+Use `ble_confignet.py` for standalone provisioning:
 
 ```powershell
-# Pair + provision WiFi in one step
-python debug_info/pair_device.py <MAC> --key <key> --ssid "MyWiFi_2.4GHz" --psk "MyPassword"
-
-# Specify a different server region (default: wp-cn)
-python debug_info/pair_device.py <MAC> --key <key> --ssid "MyWiFi" --psk "pass123" --region wp-cn
+# Provision WiFi with the existing key
+python debug_info/ble_confignet.py <MAC> --key <key> --ssid "MyWiFi_2.4GHz" --psk "MyPassword"
 ```
 
-**WiFi AUTH packet layout** (reverse-engineered from Cleanergy app btsnoop captures):
-
-| Pkt | Index | Content |
-|-----|-------|---------|
-| 0 | `0x00` | `[2]`=0x01, `[3]`=0x99+len(psk), `[4:19]`=SSID first 15 chars |
-| 1 | `0x01` | `[2:19]`=SSID remaining chars (null-padded) |
-| 2 | `0x02` | `[2:19]`=WiFi password (null-padded) |
-| 3–5 | `0x03`–`0x05` | Zero payload |
-| 6 | `0x06` | `[2:4]`=length header, `[4:14]`=key, `[14:19]`=token prefix |
-| 7 | `0x07` | `[2:19]`=token bytes 5–21 |
-| 8 | `0x08` | `[2:10]`=token bytes 22–29, rest zeros |
-| 9 | `0x89` | `[4:9]`=region code (e.g., `wp-cn`) |
-| 10 | `0x80` | Negotiation close (same as BLE-only) |
-
-When `--ssid` / `--psk` are omitted, the standard BLE-only AUTH is sent
-(packets 0–1 filled with `0x01` padding, packets 7–8 and 0x89 all zeros),
-and WiFi remains unconfigured.
-
-**Limits:** SSID max 32 chars, password max 17 chars.
+The SSID limit is 32 UTF-8 bytes and the password limit is 64 UTF-8 bytes.
+The standalone script also accepts an optional access-point BSSID.
 
 > **Note:** After the device accepts the WiFi credentials over BLE, it
 > attempts to connect to the specified network. The device connects outbound

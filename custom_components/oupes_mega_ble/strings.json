@@ -134,8 +134,8 @@
       }
     },
     "progress": {
-      "pairing": "Pairing with the device over Bluetooth… This takes about 20 seconds.",
-      "provisioning_wifi": "Sending credentials to the device over Bluetooth… This takes about 15 seconds."
+      "pairing": "Pairing with the device over Bluetooth… This takes about 20 seconds. Wi-Fi setup, if requested, can take up to 60 more seconds.",
+      "provisioning_wifi": "Sending credentials to the device over Bluetooth… This can take up to 60 seconds."
     },
     "abort": {
       "already_configured": "This device is already configured.",
@@ -149,7 +149,13 @@
       "no_device_key": "A device key is required. Go back and choose a method to provide it.",
       "pairing_device_not_found": "Device not found via Bluetooth. Make sure the device is powered on, in range, and in pairing mode (hold IoT button 5 seconds until rapid flash).",
       "pairing_connection_failed": "Could not connect to the device. Make sure no other app (e.g. Cleanergy) is connected and the device is in pairing mode.",
-      "pairing_timeout": "Pairing did not complete. Try again — make sure the device is in pairing mode (hold IoT button 5 seconds until rapid flash). The device may need a moment after the reset before it accepts pairing."
+      "pairing_timeout": "Pairing did not complete. Try again — make sure the device is in pairing mode (hold IoT button 5 seconds until rapid flash). The device may need a moment after the reset before it accepts pairing.",
+      "wifi_provisioning_device_not_found": "Device not found via Bluetooth. Make sure it is powered on, Bluetooth is enabled, and it is in range. A factory reset is not needed to send Wi-Fi credentials.",
+      "wifi_provisioning_connection_failed": "Could not connect to the device over Bluetooth. Make sure no other app (e.g. Cleanergy) is connected and Bluetooth is enabled on the device. A factory reset is not needed.",
+      "wifi_provisioning_timeout": "The device did not acknowledge the Wi-Fi credentials over Bluetooth. Check the stored device key, Wi-Fi name and password, and that the network is 2.4 GHz. A factory reset is not needed.",
+      "wifi_provisioning_invalid_credentials": "The SSID must be at most 32 UTF-8 bytes and the Wi-Fi password at most 64 UTF-8 bytes.",
+      "wifi_ssid_too_long": "SSID must be at most 32 UTF-8 bytes.",
+      "wifi_psk_too_long": "Wi-Fi password must be at most 64 UTF-8 bytes."
     }
   }
 }

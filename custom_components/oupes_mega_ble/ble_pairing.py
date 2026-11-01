@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import struct
+import string
 import time
 from enum import Enum
 
@@ -22,7 +24,13 @@ from bleak_retry_connector import establish_connection
 from homeassistant.components.bluetooth import async_ble_device_from_address
 from homeassistant.core import HomeAssistant
 
-from .protocol import WRITE_CHAR_UUID, NOTIFY_CHAR_UUID, _crc8, build_init_sequence
+from .protocol import (
+    WRITE_CHAR_UUID,
+    NOTIFY_CHAR_UUID,
+    _crc8,
+    build_config_net_packets,
+    build_init_sequence,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +47,10 @@ class PairingResult(Enum):
     DEVICE_NOT_FOUND = "device_not_found"
     CONNECTION_FAILED = "connection_failed"
     TIMEOUT = "timeout"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    WIFI_DEVICE_NOT_FOUND = "wifi_device_not_found"
+    WIFI_CONNECTION_FAILED = "wifi_connection_failed"
+    WIFI_TIMEOUT = "wifi_timeout"
 
 
 def _ts_pkt(prefix: int) -> bytes:
@@ -143,11 +155,20 @@ async def async_pair_device(
             ble_device,
             device_key,
             _report,
-            ssid=ssid,
-            psk=psk,
             region=region,
         )
         if result == PairingResult.SUCCESS:
+            if ssid:
+                await _report("Pairing complete; configuring Wi-Fi...")
+                wifi_result = await async_provision_wifi(
+                    hass, address, device_key, ssid, psk
+                )
+                if wifi_result != PairingResult.SUCCESS:
+                    return {
+                        PairingResult.DEVICE_NOT_FOUND: PairingResult.WIFI_DEVICE_NOT_FOUND,
+                        PairingResult.CONNECTION_FAILED: PairingResult.WIFI_CONNECTION_FAILED,
+                        PairingResult.INVALID_CREDENTIALS: PairingResult.INVALID_CREDENTIALS,
+                    }.get(wifi_result, PairingResult.WIFI_TIMEOUT)
             return result
 
         if cycle < max_cycles:
@@ -161,8 +182,6 @@ async def _pairing_cycle(
     dev,
     key: str,
     report,
-    ssid: str = "",
-    psk: str = "",
     region: str = "wp-cn",
 ) -> PairingResult:
     """Execute one full pairing cycle on a single BLE connection."""
@@ -199,12 +218,7 @@ async def _pairing_cycle(
         await asyncio.sleep(1.5)
 
         # Step 1: AUTH
-        auth_seq = build_init_sequence(
-            key,
-            ssid=ssid,
-            psk=psk,
-            region=region,
-        )
+        auth_seq = build_init_sequence(key, region=region)
         for pkt in auth_seq:
             await client.write_gatt_char(WRITE_CHAR_UUID, pkt, response=False)
             await asyncio.sleep(0.08)
@@ -296,14 +310,24 @@ async def async_provision_wifi(
     device_key: str,
     ssid: str,
     psk: str,
-    region: str = "wp-cn",
 ) -> PairingResult:
     """Send new WiFi credentials to an already-paired OUPES device over BLE.
 
     Unlike async_pair_device, this does NOT factory-reset or re-key the device.
-    It connects, sends the WiFi AUTH sequence, waits for acknowledgment, and
-    disconnects.  The device will then connect to the new WiFi network.
+    It sends the config-net bind and credentials commands, then waits for the
+    device's CMD12 join status.
     """
+    open_id = "".join(
+        secrets.choice(string.ascii_letters + string.digits) for _ in range(30)
+    )
+    try:
+        bind_packets = build_config_net_packets("", "", device_key, open_id)
+        credential_packets = build_config_net_packets(
+            ssid, psk, device_key, open_id
+        )
+    except (UnicodeError, ValueError):
+        return PairingResult.INVALID_CREDENTIALS
+
     ble_device = async_ble_device_from_address(hass, address, connectable=True)
     if ble_device is None:
         await asyncio.sleep(5)
@@ -311,19 +335,18 @@ async def async_provision_wifi(
     if ble_device is None:
         return PairingResult.DEVICE_NOT_FOUND
 
-    wifi_accepted = False
-    auth_configured = False
+    cmd12_status = None
+    saw_cmd11 = False
 
     def on_notify(_h, data: bytearray):
-        nonlocal wifi_accepted, auth_configured
+        nonlocal cmd12_status, saw_cmd11
         pkt = bytes(data)
         if len(pkt) < 5:
             return
-        if pkt[0] == 0x01 and pkt[1] == 0x80 and pkt[2] == 0x01:
-            if pkt[4] == 0x00:
-                wifi_accepted = True
-            elif pkt[4] == 0x01:
-                auth_configured = True
+        if pkt[2] == 0x0C:
+            cmd12_status = pkt[4]
+        elif pkt[2] == 0x0B:
+            saw_cmd11 = True
 
     try:
         client = await establish_connection(
@@ -339,18 +362,36 @@ async def async_provision_wifi(
         await client.start_notify(NOTIFY_CHAR_UUID, on_notify)
         await asyncio.sleep(1.5)
 
-        auth_seq = build_init_sequence(
-            device_key, ssid=ssid, psk=psk, region=region
-        )
-        for pkt in auth_seq:
-            await client.write_gatt_char(WRITE_CHAR_UUID, pkt, response=False)
-            await asyncio.sleep(0.08)
+        async def _send_packets(packets: list[bytes]) -> None:
+            for packet in packets:
+                await client.write_gatt_char(
+                    WRITE_CHAR_UUID, packet, response=False
+                )
+                await asyncio.sleep(0.08)
 
-        # Wait up to 10s for acknowledgment
-        for _ in range(100):
-            await asyncio.sleep(0.1)
-            if wifi_accepted or auth_configured:
+        await _send_packets(bind_packets)
+        await asyncio.sleep(1.0)
+        cmd12_status = None
+        await _send_packets(credential_packets)
+
+        keepalive = bytes.fromhex(
+            "0180030254010000000000000000000000000076"
+        )
+        for interval in range(120):
+            await asyncio.sleep(0.5)
+            if cmd12_status is not None:
                 break
+            if interval % 20 == 0:
+                await client.write_gatt_char(
+                    WRITE_CHAR_UUID, keepalive, response=False
+                )
+
+        _LOGGER.debug(
+            "Wi-Fi config-net status for %s: CMD11=%s CMD12=%s",
+            address,
+            saw_cmd11,
+            cmd12_status,
+        )
 
         try:
             await client.stop_notify(NOTIFY_CHAR_UUID)
@@ -365,7 +406,7 @@ async def async_provision_wifi(
         except Exception:  # noqa: BLE001
             pass
 
-    if wifi_accepted or auth_configured:
+    if cmd12_status in (0x00, 0x01):
         return PairingResult.SUCCESS
     return PairingResult.TIMEOUT
 

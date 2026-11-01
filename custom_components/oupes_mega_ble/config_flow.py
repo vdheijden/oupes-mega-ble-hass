@@ -288,15 +288,21 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input.get("go_back"):
                 return await self.async_step_choose_method()
             new_key = user_input.get(CONF_DEVICE_KEY, "").strip().lower()
+            ssid = user_input.get("wifi_ssid", "").strip()
+            psk = user_input.get("wifi_psk", "").strip()
             if not new_key:
                 new_key = _generate_device_key()
             elif not _valid_device_key(new_key):
                 errors[CONF_DEVICE_KEY] = "invalid_device_key"
+            if len(ssid.encode("utf-8")) > 32:
+                errors["wifi_ssid"] = "wifi_ssid_too_long"
+            if len(psk.encode("utf-8")) > 64:
+                errors["wifi_psk"] = "wifi_psk_too_long"
 
             if not errors:
                 self._pairing_key = new_key
-                self._wifi_ssid = user_input.get("wifi_ssid", "").strip()
-                self._wifi_psk = user_input.get("wifi_psk", "").strip()
+                self._wifi_ssid = ssid
+                self._wifi_psk = psk
                 return await self.async_step_pairing()
 
         suggested_key = self._pairing_key or _generate_device_key()
@@ -368,6 +374,14 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._pairing_error = "pairing_device_not_found"
         elif result == PairingResult.CONNECTION_FAILED:
             self._pairing_error = "pairing_connection_failed"
+        elif result == PairingResult.WIFI_DEVICE_NOT_FOUND:
+            self._pairing_error = "wifi_provisioning_device_not_found"
+        elif result == PairingResult.WIFI_CONNECTION_FAILED:
+            self._pairing_error = "wifi_provisioning_connection_failed"
+        elif result == PairingResult.INVALID_CREDENTIALS:
+            self._pairing_error = "wifi_provisioning_invalid_credentials"
+        elif result == PairingResult.WIFI_TIMEOUT:
+            self._pairing_error = "wifi_provisioning_timeout"
         else:
             self._pairing_error = "pairing_timeout"
 
@@ -571,6 +585,10 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             repair = user_input.get("rerun_pairing", False)
             ssid = user_input.get("wifi_ssid", "").strip()
             psk = user_input.get("wifi_psk", "").strip()
+            if len(ssid.encode("utf-8")) > 32:
+                errors["wifi_ssid"] = "wifi_ssid_too_long"
+            if len(psk.encode("utf-8")) > 64:
+                errors["wifi_psk"] = "wifi_psk_too_long"
 
             parts = address.split(":")
             if len(parts) != 6 or not all(len(p) == 2 for p in parts):
@@ -675,7 +693,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             result = self._reconfigure_task.result()
         except Exception:  # noqa: BLE001
             _LOGGER.exception(
-                "Unexpected error while re-pairing OUPES Mega %s", self._address
+                "Unexpected error while reconfiguring OUPES Mega %s", self._address
             )
             result = PairingResult.CONNECTION_FAILED
         finally:
@@ -684,12 +702,27 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if result == PairingResult.SUCCESS:
             return self.async_show_progress_done(next_step_id="reconfigure_save")
 
-        if result == PairingResult.DEVICE_NOT_FOUND:
-            self._pairing_error = "pairing_device_not_found"
-        elif result == PairingResult.CONNECTION_FAILED:
-            self._pairing_error = "pairing_connection_failed"
+        wifi_results = {
+            PairingResult.WIFI_DEVICE_NOT_FOUND,
+            PairingResult.WIFI_CONNECTION_FAILED,
+            PairingResult.WIFI_TIMEOUT,
+            PairingResult.INVALID_CREDENTIALS,
+        }
+        if self._reconfigure_repair and result not in wifi_results:
+            if result == PairingResult.DEVICE_NOT_FOUND:
+                self._pairing_error = "pairing_device_not_found"
+            elif result == PairingResult.CONNECTION_FAILED:
+                self._pairing_error = "pairing_connection_failed"
+            else:
+                self._pairing_error = "pairing_timeout"
+        elif result in (PairingResult.DEVICE_NOT_FOUND, PairingResult.WIFI_DEVICE_NOT_FOUND):
+            self._pairing_error = "wifi_provisioning_device_not_found"
+        elif result in (PairingResult.CONNECTION_FAILED, PairingResult.WIFI_CONNECTION_FAILED):
+            self._pairing_error = "wifi_provisioning_connection_failed"
+        elif result == PairingResult.INVALID_CREDENTIALS:
+            self._pairing_error = "wifi_provisioning_invalid_credentials"
         else:
-            self._pairing_error = "pairing_timeout"
+            self._pairing_error = "wifi_provisioning_timeout"
 
         return self.async_show_progress_done(next_step_id="reconfigure")
 

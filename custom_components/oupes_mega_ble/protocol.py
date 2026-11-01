@@ -112,6 +112,53 @@ def _crc8(data: bytes) -> int:
     return crc
 
 
+def build_config_net_packets(
+    ssid: str,
+    psk: str,
+    device_key: str,
+    open_id: str,
+    bssid: str = "",
+) -> list[bytes]:
+    """Build BLE config-net CMD1 packets using the Cleanergy wire format."""
+    ssid_bytes = ssid.encode("utf-8")
+    psk_bytes = psk.encode("utf-8")
+    key_bytes = device_key.encode("ascii")
+    open_id_bytes = open_id.encode("ascii")
+    if len(ssid_bytes) > 32 or len(psk_bytes) > 64:
+        raise ValueError("Wi-Fi SSID or password exceeds the config-net limit")
+    if len(key_bytes) != 10 or len(open_id_bytes) > 33:
+        raise ValueError("Invalid device key or openId length")
+
+    normalized_bssid = bssid.replace(":", "").replace("-", "").strip()
+    try:
+        bssid_bytes = bytes.fromhex(normalized_bssid)
+    except ValueError:
+        bssid_bytes = b""
+    if len(bssid_bytes) != 6:
+        bssid_bytes = bytes(6)
+
+    ssid_field = ssid_bytes.ljust(32, b"\x00") if ssid_bytes else b"\x02" * 32
+    command = (
+        b"\x01\x99"
+        + ssid_field
+        + psk_bytes.ljust(64, b"\x00")
+        + bssid_bytes
+        + key_bytes
+        + open_id_bytes.ljust(33, b"\x00")
+        + bytes(8)
+    )
+
+    packets = []
+    for offset in range(0, len(command), 17):
+        packet_index = offset // 17
+        chunk = command[offset : offset + 17].ljust(17, b"\x00")
+        if offset + 17 >= len(command):
+            packet_index |= 0x80
+        body = b"\x01" + bytes((packet_index,)) + chunk
+        packets.append(body + bytes((_crc8(body),)))
+    return packets
+
+
 def build_output_command(bitmask: int) -> bytes:
     """Build a 20-byte BLE write command that sets the output-enable bitmask.
 
