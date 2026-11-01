@@ -400,7 +400,9 @@ python debug_info/ble_confignet.py <MAC> --key <key> --ssid "MyWiFi_2.4GHz" --ps
 ```
 
 The SSID limit is 32 UTF-8 bytes and the password limit is 64 UTF-8 bytes.
-The standalone script also accepts an optional access-point BSSID.
+The setup and reconfigure flows accept an optional access-point BSSID. When
+changing networks, provide the target router/AP's BSSID if the device does not
+join with the zero-BSSID default. The standalone script accepts the same option.
 
 > **Note:** After the device accepts the WiFi credentials over BLE, it
 > attempts to connect to the specified network. The device connects outbound

@@ -55,12 +55,14 @@
           "device_key": "Device Key (10 hex characters)",
           "wifi_ssid": "WiFi Network Name (SSID)",
           "wifi_psk": "WiFi Password",
+          "wifi_bssid": "Access Point BSSID (optional)",
           "go_back": "← Go back and choose a different method"
         },
         "data_description": {
           "device_key": "A random key has been pre-filled. You can keep it or enter your own 10-character hex key.",
           "wifi_ssid": "Optional. The name of your 2.4 GHz WiFi network. Leave blank to skip WiFi provisioning.",
           "wifi_psk": "Optional. The password for your WiFi network.",
+          "wifi_bssid": "Optional. Enter the target access point MAC (for example, AA:BB:CC:DD:EE:FF). May be needed when switching networks.",
           "go_back": "Check this and click Submit to return to the method selection screen."
         }
       },
@@ -107,7 +109,8 @@
           "device_key": "Device Key",
           "rerun_pairing": "Re-run BLE pairing (requires pairing mode)",
           "wifi_ssid": "WiFi Network Name (SSID)",
-          "wifi_psk": "WiFi Password"
+          "wifi_psk": "WiFi Password",
+          "wifi_bssid": "Access Point BSSID (optional)"
         },
         "data_description": {
           "name": "Shown in Home Assistant. Changing it does not rename existing entities.",
@@ -115,7 +118,8 @@
           "device_key": "The existing 10-character hex key is pre-filled. Keep it to re-pair as the same device; change it only if you want to program a new key.",
           "rerun_pairing": "Runs the full claim sequence (about 20 seconds). The device must be in pairing mode. Leave unchecked to only re-send credentials.",
           "wifi_ssid": "Optional. The name of your 2.4 GHz WiFi network. Leave blank to skip WiFi provisioning.",
-          "wifi_psk": "Optional. The password for your WiFi network."
+          "wifi_psk": "Optional. The password for your WiFi network.",
+          "wifi_bssid": "Optional. Target AP MAC in AA:BB:CC:DD:EE:FF format. May be required when changing networks."
         }
       },
       "reconfigure_pairing": {
@@ -157,6 +161,7 @@
       "invalid_address": "Invalid Bluetooth MAC address format. Use XX:XX:XX:XX:XX:XX.",
       "already_configured_address": "Another OUPES Mega entry already uses that Bluetooth address.",
       "invalid_device_key": "Device key must be exactly 10 hexadecimal characters (e.g. bd236b1695).",
+      "invalid_bssid": "Enter a valid access point BSSID (for example, AA:BB:CC:DD:EE:FF).",
       "cloud_login_failed": "Cloud login failed. Check your Cleanergy email and password, or go back and try a different method.",
       "no_device_key": "A device key is required. Go back and choose a method to provide it.",
       "pairing_device_not_found": "Device not found via Bluetooth. Make sure the device is powered on, in range, and in pairing mode (hold IoT button 5 seconds until rapid flash).",

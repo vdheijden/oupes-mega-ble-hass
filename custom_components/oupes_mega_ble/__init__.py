@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.loader import async_get_loaded_integration
 
 from .const import (
     ATTR78_RUNTIME_MAX,
@@ -34,6 +35,11 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH, Platform.
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OUPES Mega from a config entry."""
+    integration = async_get_loaded_integration(hass, DOMAIN)
+    _LOGGER.info(
+        "Setting up OUPES Mega BLE integration version %s",
+        integration.version,
+    )
     address: str = entry.data[CONF_ADDRESS]
     name: str = entry.data.get(CONF_NAME, "OUPES Mega")
 

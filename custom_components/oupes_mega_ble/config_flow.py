@@ -69,6 +69,11 @@ def _valid_device_key(key: str) -> bool:
     return len(key) == 10 and all(c in _HEX_CHARS for c in key)
 
 
+def _valid_bssid(bssid: str) -> bool:
+    compact = bssid.replace(":", "").replace("-", "")
+    return not bssid or (len(compact) == 12 and all(c in _HEX_CHARS for c in compact))
+
+
 def _generate_device_key() -> str:
     """Generate a random 10-character hex device key."""
     return secrets.token_hex(5)
@@ -151,6 +156,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pairing_error: str | None = None
         self._wifi_ssid: str = ""
         self._wifi_psk: str = ""
+        self._wifi_bssid: str = ""
         self._reconfigure_repair: bool = False
         self._reconfigure_task: asyncio.Task | None = None
         self._reconfigure_new_data: dict[str, Any] = {}
@@ -290,6 +296,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             new_key = user_input.get(CONF_DEVICE_KEY, "").strip().lower()
             ssid = user_input.get("wifi_ssid", "").strip()
             psk = user_input.get("wifi_psk", "").strip()
+            bssid = user_input.get("wifi_bssid", "").strip()
             if not new_key:
                 new_key = _generate_device_key()
             elif not _valid_device_key(new_key):
@@ -298,11 +305,14 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["wifi_ssid"] = "wifi_ssid_too_long"
             if len(psk.encode("utf-8")) > 64:
                 errors["wifi_psk"] = "wifi_psk_too_long"
+            if not _valid_bssid(bssid):
+                errors["wifi_bssid"] = "invalid_bssid"
 
             if not errors:
                 self._pairing_key = new_key
                 self._wifi_ssid = ssid
                 self._wifi_psk = psk
+                self._wifi_bssid = bssid
                 return await self.async_step_pairing()
 
         suggested_key = self._pairing_key or _generate_device_key()
@@ -315,6 +325,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional("wifi_psk", default=self._wifi_psk): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.PASSWORD)
                     ),
+                    vol.Optional("wifi_bssid", default=self._wifi_bssid): str,
                     vol.Optional("go_back", default=False): bool,
                 }
             ),
@@ -338,6 +349,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._wifi_ssid:
                 kwargs["ssid"] = self._wifi_ssid
                 kwargs["psk"] = self._wifi_psk
+                kwargs["bssid"] = self._wifi_bssid
             self._pairing_task = self.hass.async_create_task(
                 async_pair_device(**kwargs),
             )
@@ -585,10 +597,13 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             repair = user_input.get("rerun_pairing", False)
             ssid = user_input.get("wifi_ssid", "").strip()
             psk = user_input.get("wifi_psk", "").strip()
+            bssid = user_input.get("wifi_bssid", "").strip()
             if len(ssid.encode("utf-8")) > 32:
                 errors["wifi_ssid"] = "wifi_ssid_too_long"
             if len(psk.encode("utf-8")) > 64:
                 errors["wifi_psk"] = "wifi_psk_too_long"
+            if not _valid_bssid(bssid):
+                errors["wifi_bssid"] = "invalid_bssid"
 
             parts = address.split(":")
             if len(parts) != 6 or not all(len(p) == 2 for p in parts):
@@ -611,6 +626,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._pairing_key = device_key
                 self._wifi_ssid = ssid
                 self._wifi_psk = psk
+                self._wifi_bssid = bssid
                 self._reconfigure_repair = repair
                 # Re-detect the BLE identifiers if we never captured them.
                 device_id = entry.data.get(CONF_DEVICE_ID, "") or (
@@ -644,6 +660,7 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional("wifi_psk", default=self._wifi_psk): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.PASSWORD)
                     ),
+                    vol.Optional("wifi_bssid", default=self._wifi_bssid): str,
                 }
             ),
             description_placeholders={
@@ -668,11 +685,13 @@ class OUPESMegaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self._wifi_ssid:
                     kwargs["ssid"] = self._wifi_ssid
                     kwargs["psk"] = self._wifi_psk
+                    kwargs["bssid"] = self._wifi_bssid
                 coro = async_pair_device(**kwargs)
             else:
                 # Soft re-provision - no factory reset, just new credentials.
                 kwargs["ssid"] = self._wifi_ssid
                 kwargs["psk"] = self._wifi_psk
+                kwargs["bssid"] = self._wifi_bssid
                 coro = async_provision_wifi(**kwargs)
             self._reconfigure_task = self.hass.async_create_task(coro)
 

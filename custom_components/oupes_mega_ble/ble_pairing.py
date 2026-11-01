@@ -103,6 +103,7 @@ async def async_pair_device(
     progress_callback=None,
     ssid: str = "",
     psk: str = "",
+    bssid: str = "",
     region: str = "wp-cn",
 ) -> PairingResult:
     """Run the full BLE pairing flow for an OUPES Mega device.
@@ -161,7 +162,7 @@ async def async_pair_device(
             if ssid:
                 await _report("Pairing complete; configuring Wi-Fi...")
                 wifi_result = await async_provision_wifi(
-                    hass, address, device_key, ssid, psk
+                    hass, address, device_key, ssid, psk, bssid
                 )
                 if wifi_result != PairingResult.SUCCESS:
                     return {
@@ -310,6 +311,7 @@ async def async_provision_wifi(
     device_key: str,
     ssid: str,
     psk: str,
+    bssid: str = "",
 ) -> PairingResult:
     """Send new WiFi credentials to an already-paired OUPES device over BLE.
 
@@ -323,10 +325,17 @@ async def async_provision_wifi(
     try:
         bind_packets = build_config_net_packets("", "", device_key, open_id)
         credential_packets = build_config_net_packets(
-            ssid, psk, device_key, open_id
+            ssid, psk, device_key, open_id, bssid
         )
     except (UnicodeError, ValueError):
         return PairingResult.INVALID_CREDENTIALS
+
+    _LOGGER.info(
+        "Wi-Fi config-net request for %s: target SSID=%r, BSSID=%s",
+        address,
+        ssid,
+        bssid or "unspecified",
+    )
 
     ble_device = async_ble_device_from_address(hass, address, connectable=True)
     if ble_device is None:
@@ -386,12 +395,30 @@ async def async_provision_wifi(
                     WRITE_CHAR_UUID, keepalive, response=False
                 )
 
-        _LOGGER.debug(
-            "Wi-Fi config-net status for %s: CMD11=%s CMD12=%s",
-            address,
-            saw_cmd11,
-            cmd12_status,
-        )
+        if cmd12_status in (0x00, 0x01):
+            _LOGGER.info(
+                "Wi-Fi config-net result for %s: device reported joined "
+                "(CMD12=0x%02x) for requested SSID=%r; SSID is not echoed",
+                address,
+                cmd12_status,
+                ssid,
+            )
+        elif cmd12_status is None:
+            _LOGGER.warning(
+                "Wi-Fi config-net result for %s: no CMD12 join confirmation "
+                "for requested SSID=%r (CMD11 observed=%s)",
+                address,
+                ssid,
+                saw_cmd11,
+            )
+        else:
+            _LOGGER.warning(
+                "Wi-Fi config-net result for %s: device returned CMD12=0x%02x "
+                "for requested SSID=%r (not a success code)",
+                address,
+                cmd12_status,
+                ssid,
+            )
 
         try:
             await client.stop_notify(NOTIFY_CHAR_UUID)
